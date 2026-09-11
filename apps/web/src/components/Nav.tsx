@@ -51,23 +51,42 @@ export default function Nav() {
         {ITEMS.map(([href, key]) => (
           <Link key={href} href={href}>{t(key)}</Link>
         ))}
+        {/* Mobil menü içinde giriş/paylaş — üst bar taşmasın diye */}
+        <div className="nav-auth-mobile">
+          {user ? (
+            <>
+              <Link href="/profil" className="nav-user">
+                <span className="avatar">{user.fullName.slice(0, 2).toUpperCase()}</span>
+                <span>{user.fullName.split(' ')[0]}</span>
+              </Link>
+              <button className="btn btn-ghost btn-sm" onClick={() => logout()}>{t('nav_logout')}</button>
+            </>
+          ) : (
+            <>
+              <Link href="/giris" className="btn btn-ghost btn-sm">{t('nav_login')}</Link>
+              <Link href="/paylas" className="btn nav-cta">{t('nav_share')}</Link>
+            </>
+          )}
+        </div>
       </div>
       <div className="nav-right">
         <LangSwitcher />
-        {user ? (
-          <>
-            <Link href="/profil" className="nav-user">
-              <span className="avatar">{user.fullName.slice(0, 2).toUpperCase()}</span>
-              <span>{user.fullName.split(' ')[0]}</span>
-            </Link>
-            <button className="btn btn-ghost btn-sm" onClick={() => logout()}>{t('nav_logout')}</button>
-          </>
-        ) : (
-          <>
-            <Link href="/giris" className="btn btn-ghost btn-sm">{t('nav_login')}</Link>
-            <Link href="/paylas" className="btn nav-cta">{t('nav_share')}</Link>
-          </>
-        )}
+        <div className="nav-auth-desktop">
+          {user ? (
+            <>
+              <Link href="/profil" className="nav-user">
+                <span className="avatar">{user.fullName.slice(0, 2).toUpperCase()}</span>
+                <span>{user.fullName.split(' ')[0]}</span>
+              </Link>
+              <button className="btn btn-ghost btn-sm" onClick={() => logout()}>{t('nav_logout')}</button>
+            </>
+          ) : (
+            <>
+              <Link href="/giris" className="btn btn-ghost btn-sm">{t('nav_login')}</Link>
+              <Link href="/paylas" className="btn nav-cta">{t('nav_share')}</Link>
+            </>
+          )}
+        </div>
       </div>
     </nav>
     </>
