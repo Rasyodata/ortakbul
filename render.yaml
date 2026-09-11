@@ -52,9 +52,9 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      # API sabit alan adı (Render api servisine api.ortakbul.org CNAME'i eklenince):
-      # Henüz custom domain yoksa geçici olarak https://ortakbul-api.onrender.com/api kullan.
+      # İlk deploy hemen çalışsın diye Render api servisinin kendi adresi.
+      # Custom domain (api.ortakbul.org) eklenince buraya onu yazıp yeniden deploy et.
       - key: NEXT_PUBLIC_API_URL
-        value: https://api.ortakbul.org/api
+        value: https://ortakbul-api.onrender.com/api
       - key: NEXT_PUBLIC_ADMIN_PATH
         value: y-panel-8f3a
