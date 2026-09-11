@@ -14,7 +14,7 @@ services:
     name: ortakbul-api
     runtime: node
     plan: free
-    buildCommand: corepack enable && pnpm install --no-frozen-lockfile && pnpm --filter @ortakbul/api build && pnpm --filter @ortakbul/api exec prisma generate
+    buildCommand: npm install -g pnpm@9.7.0 && pnpm install --no-frozen-lockfile && pnpm --filter @ortakbul/api build && pnpm --filter @ortakbul/api exec prisma generate
     startCommand: pnpm --filter @ortakbul/api exec prisma db push --accept-data-loss && (pnpm --filter @ortakbul/api exec prisma db seed || true) && node apps/api/dist/main.js
     envVars:
       - key: NODE_ENV
@@ -47,7 +47,7 @@ services:
     name: ortakbul-web
     runtime: node
     plan: free
-    buildCommand: corepack enable && pnpm install --no-frozen-lockfile && pnpm --filter @ortakbul/web build
+    buildCommand: npm install -g pnpm@9.7.0 && pnpm install --no-frozen-lockfile && pnpm --filter @ortakbul/web build
     startCommand: pnpm --filter @ortakbul/web exec next start -p $PORT
     envVars:
       - key: NODE_ENV
