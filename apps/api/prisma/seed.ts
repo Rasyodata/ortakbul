@@ -1,9 +1,70 @@
 import 'dotenv/config';
+import { existsSync, readFileSync } from 'fs';
+import * as path from 'path';
 import { PrismaClient } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { ALL_PERMISSIONS, PERMISSIONS, PERMISSION_GROUPS } from '../src/common/enums/permission.enum';
 
 const prisma = new PrismaClient();
+
+// Yerelden alinan tam icerik snapshot'i (prisma/snapshot.json) canliya yuklenir.
+// Sadece canli DB bos/az doluysa (<=5 ilan) calisir; boylece sonradan eklenen veri ezilmez.
+const SNAPSHOT_ORDER = [
+  'permission', 'role', 'rolePermission', 'user', 'userRole', 'consultantProfile',
+  'partnerFirm', 'listing', 'consultantAssignment', 'question', 'favorite', 'report',
+  'reviewRequest', 'matchRequest', 'payment', 'translation', 'fxRate', 'agentReport', 'siteSetting',
+];
+const SNAPSHOT_TABLE: Record<string, string> = {
+  permission: 'Permission', role: 'Role', rolePermission: 'RolePermission', user: 'User',
+  userRole: 'UserRole', consultantProfile: 'ConsultantProfile', partnerFirm: 'PartnerFirm',
+  listing: 'Listing', consultantAssignment: 'ConsultantAssignment', question: 'Question',
+  favorite: 'Favorite', report: 'Report', reviewRequest: 'ReviewRequest', matchRequest: 'MatchRequest',
+  payment: 'Payment', translation: 'Translation', fxRate: 'FxRate', agentReport: 'AgentReport',
+  siteSetting: 'SiteSetting',
+};
+
+async function loadSnapshotIfNeeded(): Promise<boolean> {
+  const snapPath = path.join(__dirname, 'snapshot.json');
+  if (!existsSync(snapPath)) return false;
+  const currentListings = await prisma.listing.count();
+  if (currentListings > 5) return false; // zaten veri var, dokunma
+
+  const snap = JSON.parse(readFileSync(snapPath, 'utf8')) as Record<string, any[]>;
+  const quoted = SNAPSHOT_ORDER.map((m) => `"${SNAPSHOT_TABLE[m]}"`).join(',');
+  await prisma.$executeRawUnsafe(`TRUNCATE ${quoted} RESTART IDENTITY CASCADE;`);
+
+  const chunk = <T>(a: T[], n: number): T[][] => {
+    const o: T[][] = [];
+    for (let i = 0; i < a.length; i += n) o.push(a.slice(i, i + n));
+    return o;
+  };
+  const userSelfRefFix: { id: string; createdByAdminId: string }[] = [];
+  let total = 0;
+  for (const m of SNAPSHOT_ORDER) {
+    const rows: any[] = snap[m] || [];
+    if (!rows.length) continue;
+    if (m === 'user') {
+      for (const u of rows) {
+        if (u.createdByAdminId) {
+          userSelfRefFix.push({ id: u.id, createdByAdminId: u.createdByAdminId });
+          u.createdByAdminId = null;
+        }
+      }
+    }
+    for (const part of chunk(rows, 500)) {
+      const r = await (prisma as any)[m].createMany({ data: part, skipDuplicates: true });
+      total += r.count;
+    }
+  }
+  for (const f of userSelfRefFix) {
+    await prisma.user.update({ where: { id: f.id }, data: { createdByAdminId: f.createdByAdminId } });
+  }
+  const lc = await prisma.listing.count();
+  const uc = await prisma.user.count();
+  // eslint-disable-next-line no-console
+  console.log(`Snapshot yuklendi: ${lc} ilan, ${uc} kullanici (${total} kayit).`);
+  return true;
+}
 
 // Rol → izin eşlemesi (demo'daki izin matrisiyle aynı mantık)
 const ROLE_DEFS: { name: string; label: string; perms: string[] }[] = [
@@ -16,6 +77,13 @@ const ROLE_DEFS: { name: string; label: string; perms: string[] }[] = [
 ];
 
 async function main() {
+  // 0) Yerel snapshot varsa ve canli DB bossa: birebir yukle, demo seed'i atla.
+  if (await loadSnapshotIfNeeded()) {
+    // eslint-disable-next-line no-console
+    console.log('Demo seed atlandi (snapshot kullanildi).');
+    return;
+  }
+
   // 1) İzinler
   for (const p of ALL_PERMISSIONS) {
     await prisma.permission.upsert({
