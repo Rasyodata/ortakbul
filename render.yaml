@@ -1,0 +1,60 @@
+# ortakbul.org — Render Blueprint (YOL 1)
+# render.com → New + → Blueprint → bu repoyu seç. api + web + PostgreSQL kurulur.
+# Not: Ücretsiz Postgres 90 gün; kalıcı ücretsiz için Neon.tech kullanıp DATABASE_URL'i elle gir.
+
+databases:
+  - name: ortakbul-db
+    plan: free
+    databaseName: ortakbul
+    user: ortakbul
+
+services:
+  # --- API (NestJS) ---
+  - type: web
+    name: ortakbul-api
+    runtime: node
+    plan: free
+    buildCommand: corepack enable && pnpm install --no-frozen-lockfile && pnpm --filter @ortakbul/api build && pnpm --filter @ortakbul/api exec prisma generate
+    startCommand: pnpm --filter @ortakbul/api exec prisma db push --accept-data-loss && (pnpm --filter @ortakbul/api exec prisma db seed || true) && node apps/api/dist/main.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ortakbul-db
+          property: connectionString
+      - key: WEB_ORIGIN
+        value: https://ortakbul.org,https://www.ortakbul.org,https://ortakbul-web.onrender.com
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: JWT_ACCESS_TTL
+        value: 15m
+      - key: JWT_REFRESH_TTL
+        value: 30d
+      - key: ADMIN_PATH
+        value: /y-panel-8f3a
+      - key: SEED_ADMIN_EMAIL
+        value: admin@ortakbul.org
+      - key: SEED_ADMIN_PASSWORD
+        sync: false   # Render panelinden güçlü bir şifre gir
+      - key: FX_USD_TRY
+        value: "41.0"
+
+  # --- WEB (Next.js) ---
+  - type: web
+    name: ortakbul-web
+    runtime: node
+    plan: free
+    buildCommand: corepack enable && pnpm install --no-frozen-lockfile && pnpm --filter @ortakbul/web build
+    startCommand: pnpm --filter @ortakbul/web exec next start -p $PORT
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # API sabit alan adı (Render api servisine api.ortakbul.org CNAME'i eklenince):
+      # Henüz custom domain yoksa geçici olarak https://ortakbul-api.onrender.com/api kullan.
+      - key: NEXT_PUBLIC_API_URL
+        value: https://api.ortakbul.org/api
+      - key: NEXT_PUBLIC_ADMIN_PATH
+        value: y-panel-8f3a

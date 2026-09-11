@@ -1,0 +1,28 @@
+{
+  "name": "ortakbul",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ortakbul.org — ortak arayanla ortak olmak isteyeni buluşturan platform (monorepo)",
+  "packageManager": "pnpm@9.7.0",
+  "scripts": {
+    "dev:api": "pnpm --filter @ortakbul/api start:dev",
+    "dev:web": "pnpm --filter @ortakbul/web dev",
+    "db:up": "docker compose up -d postgres redis",
+    "db:down": "docker compose down",
+    "prisma:migrate": "pnpm --filter @ortakbul/api prisma:migrate",
+    "prisma:seed": "pnpm --filter @ortakbul/api prisma:seed",
+    "prisma:studio": "pnpm --filter @ortakbul/api prisma:studio"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "pnpm": {
+    "overrides": {
+      "@types/react": "18.3.12",
+      "@types/react-dom": "18.3.1",
+      "react": "18.3.1",
+      "react-dom": "18.3.1"
+    }
+  }
+}

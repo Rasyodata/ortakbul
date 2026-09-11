@@ -1,0 +1,671 @@
+// ortakbul.org — veri modeli
+// Prisma + PostgreSQL. Migration: `pnpm prisma:migrate`, Seed: `pnpm prisma:seed`
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// ENUM'lar
+// ---------------------------------------------------------------------------
+enum UserStatus {
+  PENDING     // üyelik yönetici onayı bekliyor (yine de ilan verebilir)
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+// Platform üyelik türü (rol tabanlı RBAC'tan ayrıdır; bu "kullanıcı ne yapar")
+enum MemberType {
+  ENTREPRENEUR    // Girişimci
+  INVESTOR        // Yatırımcı
+  ANGEL_INVESTOR  // Melek Yatırımcı
+  BUSINESS_PARTNER// İş ortağı
+  CONSULTANT      // Danışman
+  PARTNER_FIRM    // Partner Firma
+  INSTITUTION     // Kurum
+}
+
+enum AuthProvider {
+  LOCAL
+  GOOGLE
+  APPLE
+  FACEBOOK
+  INSTAGRAM
+  TIKTOK
+}
+
+enum InvoiceType {
+  INDIVIDUAL // Bireysel
+  CORPORATE  // Kurumsal
+}
+
+enum Gender {
+  FEMALE // Kadın — kadın girişimci ayrıcalıkları
+  MALE
+  OTHER
+}
+
+// Satılık şirket / ilan ödeme tipi
+enum SalePaymentType {
+  CASH        // Peşin
+  INSTALLMENT // Vadeli
+  BARTER      // Takas
+}
+
+enum ListingType {
+  IDEA             // Fikir
+  PARTNERSHIP      // Ortak arayan ilanı
+  COMPANY_SALE     // Satılık şirket
+  FRANCHISE        // Franchise / distribütörlük
+  INVESTOR_CAPITAL // Melek yatırımcı sermaye ilanı
+}
+
+enum ListingStatus {
+  DRAFT
+  PENDING   // yönetici onayı bekliyor
+  APPROVED
+  REJECTED
+  ARCHIVED
+}
+
+// İlanı büyütme paketi (gelir modeli)
+enum ListingTier {
+  NORMAL
+  FEATURED    // Öne Çıkan
+  PRIVILEGED  // Ayrıcalıklı
+  SHOWCASE    // Vitrin
+}
+
+// Ortaklık finansman yapısı
+enum PartnershipStructure {
+  CAPITAL       // Sermaye
+  COLLATERAL    // Teminat
+  CREDIT_LINE   // Kredi line
+  CHEQUE_BOND   // Çek / bono
+  EFFORT        // Emek / know-how
+}
+
+// Ortaklık tipi (Ortak Arayanlar)
+enum PartnershipType {
+  PROFIT_LOSS     // Kâr-Zarar
+  TIMED           // Süreli
+  PROFIT          // Kâr
+  PROJECT         // Proje
+  GOODS_PURCHASE  // Mal alım
+  CAPITAL         // Sermaye
+  FRANCHISE
+  DISTRIBUTOR
+}
+
+enum ConsultantCategory {
+  LAWYER          // Avukat
+  ACCOUNTANT      // Mali Müşavir
+  SECTOR_EXPERT   // Sektör Uzmanı
+  FINANCE_ADVISOR // Finans Danışmanı
+  MARKETING       // Pazarlama Uzmanı
+  MANAGEMENT      // Yönetim Danışmanı
+}
+
+// Bir danışmanın ilana atanma rolü
+enum AssignmentRole {
+  CONSULTANT // danışmanlık
+  AUDITOR    // denetimli ortaklıkta denetçi
+}
+
+enum PaymentProvider {
+  IYZICO
+  PAYTR
+  STRIPE
+  ADMIN_GRANT // yönetici ücretsiz atadı
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+enum VerificationChannel {
+  EMAIL
+  SMS
+}
+
+enum FavoriteTarget {
+  LISTING
+  CONSULTANT
+}
+
+// İlan ihbar/şikayet nedenleri
+enum ReportReason {
+  FRAUD          // Dolandırıcılık
+  MISLEADING     // Yanıltıcı / sahte ilan
+  INCORRECT_INFO // Yanlış / eksik bilgi
+  SPAM           // Spam / tekrarlanan ilan
+  INAPPROPRIATE  // Uygunsuz içerik
+  DUPLICATE      // Kopya ilan
+  OTHER          // Diğer
+}
+
+enum ReportStatus {
+  OPEN
+  REVIEWED
+  DISMISSED
+  ACTIONED
+}
+
+// Ücretli danışman incelemesi tipi
+enum ReviewType {
+  ACCOUNTANT    // Mali Müşavir  (satış tutarının %0.4'ü — %1'in payı)
+  LAWYER        // Avukat        (satış tutarının %0.4'ü)
+  SECTOR_REP    // Sektör Temsilcisi (satış tutarının %0.2'si — %1'in %20'si)
+  SECTOR_REPORT // Sektör Raporu (bağımsız — satış tutarının %1'i)
+}
+
+enum ReviewStatus {
+  OPEN      // talep açık, danışman bekliyor
+  OFFERED   // bir danışman istekte bulundu
+  ASSIGNED  // atandı
+  COMPLETED // inceleme tamamlandı
+}
+
+// "Size uygun işi biz bulalım" — girişimci eşleştirme / mentörlük talebi durumu
+enum MatchStatus {
+  NEW        // yeni talep, mentör bekliyor
+  CONTACTED  // mentör iletişime geçti
+  MATCHED    // uygun fırsat(lar) sunuldu
+  CLOSED     // tamamlandı / kapandı
+}
+
+// ---------------------------------------------------------------------------
+// RBAC: Rol & İzin (yönetici panosu erişimi)
+// ---------------------------------------------------------------------------
+model Permission {
+  id        String           @id @default(cuid())
+  code      String           @unique // örn: listing.read, listing.write, listing.approve, payment.manage
+  label     String
+  roles     RolePermission[]
+  createdAt DateTime         @default(now())
+}
+
+model Role {
+  id          String           @id @default(cuid())
+  name        String           @unique // SUPER_ADMIN, CONTENT_EDITOR, ...
+  label       String
+  isSystem    Boolean          @default(false)
+  permissions RolePermission[]
+  users       UserRole[]
+  createdAt   DateTime         @default(now())
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+}
+
+// ---------------------------------------------------------------------------
+// Kullanıcı
+// ---------------------------------------------------------------------------
+model User {
+  id            String       @id @default(cuid())
+  email         String       @unique
+  passwordHash  String?      // sosyal girişte null olabilir
+  authProvider  AuthProvider @default(LOCAL)
+  providerId    String?      // OAuth sağlayıcı kullanıcı id'si
+  fullName      String
+  phone         String?
+  memberType    MemberType   @default(ENTREPRENEUR)
+  gender        Gender?      // kadın girişimci ayrıcalıkları için
+  status        UserStatus   @default(PENDING)
+  emailVerified Boolean      @default(false)
+  phoneVerified Boolean      @default(false)
+
+  // Güvenlik / denetim izi
+  lastIp        String?
+  lastUserAgent String?      @db.Text
+  lastLoginAt   DateTime?
+  banReason     String?
+
+  // Konum (ülke zorunlu)
+  countryCode   String       // ISO2: TR, US, DE...
+  city          String?
+
+  // Fatura / vergi (ülkeye göre)
+  invoiceType   InvoiceType  @default(INDIVIDUAL)
+  companyName   String?
+  taxOffice     String?
+  taxNumber     String?
+
+  locale        String       @default("tr")
+
+  // Yönetici tarafından oluşturulduysa
+  createdByAdminId String?
+  createdByAdmin   User?     @relation("AdminCreatedUsers", fields: [createdByAdminId], references: [id])
+  createdMembers   User[]    @relation("AdminCreatedUsers")
+
+  roles             UserRole[]
+  consultantProfile ConsultantProfile?
+  ownedListings     Listing[]           @relation("ListingOwner")
+  approvedListings  Listing[]           @relation("ListingApprovedBy")
+  createdListings   Listing[]           @relation("ListingCreatedByAdmin")
+  assignments       ConsultantAssignment[] @relation("AssignmentConsultant")
+  assignedByMe      ConsultantAssignment[] @relation("AssignmentAssignedBy")
+  questionsAsked    Question[]          @relation("QuestionFrom")
+  favorites         Favorite[]
+  payments          Payment[]
+  verifications     Verification[]
+  refreshTokens     RefreshToken[]
+  consents          Consent[]
+  auditLogs         AuditLog[]
+  reportsMade       Report[]
+  reviewRequestsMade     ReviewRequest[] @relation("ReviewRequester")
+  reviewRequestsAssigned ReviewRequest[] @relation("ReviewConsultant")
+  matchRequests          MatchRequest[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([memberType])
+  @@index([status])
+  @@index([countryCode])
+}
+
+// ---------------------------------------------------------------------------
+// Danışman profili
+// ---------------------------------------------------------------------------
+model ConsultantProfile {
+  id              String             @id @default(cuid())
+  userId          String             @unique
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category        ConsultantCategory
+  sector          String
+  experienceYears Int                @default(0)
+  bio             String?            @db.Text
+  feeText         String?
+  tags            String[]
+  ratingAvg       Float              @default(0)
+  reviewsCount    Int                @default(0)
+  verified        Boolean            @default(false)
+  tier            ListingTier        @default(NORMAL) // ücretli üst sıra paketi
+  status          UserStatus         @default(PENDING) // danışman başvuru onayı
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+  @@index([sector])
+  @@index([status])
+}
+
+// ---------------------------------------------------------------------------
+// İlan (tüm tipler tek modelde — tip'e göre alanlar)
+// ---------------------------------------------------------------------------
+model Listing {
+  id       String        @id @default(cuid())
+  type     ListingType
+  status   ListingStatus @default(PENDING)
+  tier     ListingTier   @default(NORMAL)
+  tierPaid Boolean       @default(false) // ücretli paket bedeli tahsil edildi mi (admin grant'ta true olabilir)
+
+  ownerId String
+  owner   User   @relation("ListingOwner", fields: [ownerId], references: [id])
+
+  title    String
+  short    String
+  detail   String @db.Text
+
+  // Ortak alanlar
+  category String?
+  sector   String?
+  countryCode String?
+  city     String?
+  amountText String? // "1.500.000 ₺ sermaye" gibi serbest metin
+  amountTL   Int?    // sayısal (USD dönüşümü için)
+  favorites  Int     @default(0) // gerçek favori sayısı (gösterimde kullanılır)
+
+  // IDEA
+  stage    String?
+  problem  String? @db.Text
+  audience String?
+  structure PartnershipStructure?
+
+  // PARTNERSHIP
+  partnershipType PartnershipType?
+  audited         Boolean @default(false) // denetimli ortaklık
+
+  // COMPANY_SALE
+  price          String?
+  foundedYear    Int?
+  employees      String?
+  revenue        String?
+  reason         String?
+  salePaymentType SalePaymentType? // Peşin / Vadeli / Takas
+
+  // FRANCHISE
+  franchiseKind String? // "Franchise" | "Distribütörlük"
+  investTL      Int?
+
+  // INVESTOR_CAPITAL
+  capitalTier String?   // c1|c2|c3
+  sectors     String[]  // yatırımcının ilgi alanları
+
+  // ek/esnek alanlar
+  details Json?
+
+  // Onay
+  approvedById String?
+  approvedBy   User?   @relation("ListingApprovedBy", fields: [approvedById], references: [id])
+  approvedAt   DateTime?
+
+  // Yönetici oluşturduysa (üye adına ilan)
+  createdByAdminId String?
+  createdByAdmin   User?  @relation("ListingCreatedByAdmin", fields: [createdByAdminId], references: [id])
+
+  assignments ConsultantAssignment[]
+  questions   Question[]
+  payments    Payment[]
+  reports     Report[]
+  reviewRequests ReviewRequest[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([type, status])
+  @@index([tier])
+  @@index([category])
+  @@index([countryCode])
+  @@index([ownerId])
+}
+
+// Danışman/denetçi ilana atama (admin yapar; danışman yalnızca atandığını görür)
+model ConsultantAssignment {
+  id           String         @id @default(cuid())
+  listingId    String
+  listing      Listing        @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  consultantId String
+  consultant   User           @relation("AssignmentConsultant", fields: [consultantId], references: [id])
+  role         AssignmentRole @default(CONSULTANT)
+  assignedById String?
+  assignedBy   User?          @relation("AssignmentAssignedBy", fields: [assignedById], references: [id])
+  createdAt    DateTime       @default(now())
+
+  @@unique([listingId, consultantId, role])
+  @@index([consultantId])
+}
+
+// Atanan soru-cevaplar
+model Question {
+  id           String   @id @default(cuid())
+  listingId    String?
+  listing      Listing? @relation(fields: [listingId], references: [id], onDelete: SetNull)
+  consultantId String   // danışman (User.id)
+  fromUserId   String
+  fromUser     User     @relation("QuestionFrom", fields: [fromUserId], references: [id])
+  question     String   @db.Text
+  answer       String?  @db.Text
+  answeredAt   DateTime?
+  createdAt    DateTime @default(now())
+
+  @@index([consultantId])
+  @@index([listingId])
+}
+
+model Favorite {
+  id         String         @id @default(cuid())
+  userId     String
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targetType FavoriteTarget
+  targetId   String
+  createdAt  DateTime       @default(now())
+
+  @@unique([userId, targetType, targetId])
+}
+
+// İlan ihbar / şikayet
+model Report {
+  id         String       @id @default(cuid())
+  listingId  String
+  listing    Listing      @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  reporterId String?
+  reporter   User?        @relation(fields: [reporterId], references: [id], onDelete: SetNull)
+  reason     ReportReason
+  note       String?      @db.Text
+  status     ReportStatus @default(OPEN)
+  createdAt  DateTime     @default(now())
+
+  @@index([status])
+  @@index([listingId])
+}
+
+// Ücretli danışman incelemesi talebi
+model ReviewRequest {
+  id                   String       @id @default(cuid())
+  listingId            String
+  listing              Listing      @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  requesterId          String
+  requester            User         @relation("ReviewRequester", fields: [requesterId], references: [id])
+  type                 ReviewType
+  feeText              String?
+  status               ReviewStatus @default(OPEN)
+  assignedConsultantId String?
+  assignedConsultant   User?        @relation("ReviewConsultant", fields: [assignedConsultantId], references: [id])
+  note                 String?      @db.Text
+  createdAt            DateTime     @default(now())
+
+  @@index([status])
+  @@index([listingId])
+}
+
+// "Size Uygun İşi Biz Bulalım" — girişimci eşleştirme / mentörlük talebi.
+// Ziyaretçi veya üye doldurur; mentör panelden görüp uygun fırsatları hazırlar.
+model MatchRequest {
+  id               String      @id @default(cuid())
+  userId           String?     // giriş yapmışsa
+  user             User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  fullName         String
+  email            String?
+  phone            String?
+  countryCode      String?
+  city             String?
+  budgetTier       String      // b1: 0-100K, b2: 100-500K, b3: 500K-1M, b4: 1M+
+  sectors          String[]    // ilgi sektörleri
+  opportunityTypes String[]    // IDEA/PARTNERSHIP/COMPANY_SALE/FRANCHISE/INVESTOR_CAPITAL
+  businessTypes    String[]    // Home Ofis, E-Ticaret, Üretim...
+  workStyle        String?     // fulltime | parttime | passive
+  risk             String?     // low | medium | high
+  experience       String?     @db.Text
+  goal             String?     @db.Text
+  note             String?     @db.Text
+  status           MatchStatus @default(NEW)
+  createdAt        DateTime    @default(now())
+
+  @@index([status])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Ödeme (öne çıkarma paketleri)
+// ---------------------------------------------------------------------------
+model Payment {
+  id          String          @id @default(cuid())
+  userId      String
+  user        User            @relation(fields: [userId], references: [id])
+  listingId   String?
+  listing     Listing?        @relation(fields: [listingId], references: [id], onDelete: SetNull)
+  provider    PaymentProvider
+  tier        ListingTier?
+  amount      Int             // kuruş / cent
+  currency    String          @default("TRY")
+  status      PaymentStatus   @default(PENDING)
+  providerRef String?
+  createdAt   DateTime        @default(now())
+
+  @@index([userId])
+  @@index([status])
+}
+
+// ---------------------------------------------------------------------------
+// Partner firmalar
+// ---------------------------------------------------------------------------
+model PartnerFirm {
+  id        String   @id @default(cuid())
+  name      String
+  type      String   // Yatırım Ağı, Kurumsal Partner, Hızlandırıcı...
+  region    String
+  sectors   String[]
+  since     Int?
+  note      String?  @db.Text
+  status    ListingStatus @default(APPROVED)
+  createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Doğrulama (mail / sms) & refresh token
+// ---------------------------------------------------------------------------
+model Verification {
+  id        String              @id @default(cuid())
+  userId    String
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel   VerificationChannel
+  codeHash  String
+  expiresAt DateTime
+  consumedAt DateTime?
+  createdAt DateTime            @default(now())
+
+  @@index([userId, channel])
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// KVKK / GDPR: çerez onayı & denetim logu
+// ---------------------------------------------------------------------------
+model Consent {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  anonId    String?  // giriş yapmamış ziyaretçi
+  necessary Boolean  @default(true)
+  analytics Boolean  @default(false)
+  marketing Boolean  @default(false)
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// Engellenen IP adresleri (şüpheli/kötüye kullanım)
+model BannedIp {
+  id        String   @id @default(cuid())
+  ip        String   @unique
+  reason    String?
+  createdAt DateTime @default(now())
+  @@index([ip])
+}
+
+// Güvenlik olayları (başarısız giriş, rate-limit, şüpheli hareket)
+model SecurityEvent {
+  id        String   @id @default(cuid())
+  type      String   // login.fail, login.ok, ip.ban, user.suspend, rate.limit
+  ip        String?
+  userAgent String?  @db.Text
+  email     String?
+  userId    String?
+  meta      Json?
+  createdAt DateTime @default(now())
+  @@index([type])
+  @@index([ip])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action     String   // örn: listing.approve, user.create, payment.grant
+  entityType String?
+  entityId   String?
+  meta       Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([actorId])
+  @@index([entityType, entityId])
+}
+
+// ---------------------------------------------------------------------------
+// i18n (DB tabanlı çeviriler) & döviz kuru & AI ajan raporları
+// ---------------------------------------------------------------------------
+model Translation {
+  id        String   @id @default(cuid())
+  locale    String   // tr, en, ru, ar, fa, fr, de, es, pt
+  namespace String   @default("common")
+  key       String
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt
+
+  @@unique([locale, namespace, key])
+  @@index([locale])
+}
+
+model FxRate {
+  id        String   @id @default(cuid())
+  base      String   // USD
+  quote     String   // TRY
+  rate      Float
+  fetchedAt DateTime @default(now())
+
+  @@unique([base, quote])
+}
+
+model AgentReport {
+  id        String   @id @default(cuid())
+  tag       String   // Sektör Trendi, Fırsat, Rekabet...
+  title     String
+  body      String   @db.Text
+  source    String?
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  @@index([tag])
+}
+
+// Site geneli ayarlar (tekil satır): sosyal medya linkleri + <head>/<body> script enjeksiyonu
+// (Google Search Console doğrulama, Google Ads/Analytics, özel JS vb.)
+model SiteSetting {
+  id           String   @id @default("singleton")
+  socialLinks  Json?    // { facebook, youtube, x, instagram, linkedin, tiktok }
+  headScripts  String?  @db.Text // <head> içine enjekte edilecek ham HTML/JS
+  bodyScripts  String?  @db.Text // <body> sonuna enjekte edilecek ham HTML/JS
+  announcement Json?    // { enabled, title, message, ctaText, ctaLink, version }
+  updatedAt    DateTime @updatedAt
+}
